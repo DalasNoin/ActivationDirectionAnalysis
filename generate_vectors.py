@@ -37,6 +37,7 @@ class ComparisonDataset(Dataset):
         self.use_chat = use_chat
 
     def prompt_to_tokens(self, instruction, model_output):
+
         tokens = tokenize_llama(
             self.tokenizer,
             self.system_prompt,
@@ -60,20 +61,29 @@ class ComparisonDataset(Dataset):
 
 
 def generate_save_vectors(
-    layers: List[int], use_base_model: bool, model_size: str, data_path: str, dataset_name: str
+    data_path: str, 
+    # dataset_name: str,
+    model_name: str,
+    layers: List[int] = None,
+    base_model: bool = False,
 ):
     """
     layers: list of layers to generate vectors for
-    use_base_model: Whether to use the base model instead of the chat model
-    model_size: size of the model to use, either "7b" or "13b"
+    data_path: path to dataset
+    dataset_name: name of dataset
+    model_name: name of model to use
     """
     if not os.path.exists(SAVE_VECTORS_PATH):
         os.makedirs(SAVE_VECTORS_PATH)
 
+    dataset_name = data_path.split("/")[-1].split(".")[0]
+
     model = LlamaWrapper(
-        HUGGINGFACE_TOKEN, SYSTEM_PROMPT, size=model_size, use_chat=not use_base_model
+        HUGGINGFACE_TOKEN, SYSTEM_PROMPT, model_name=model_name, use_chat=not base_model
     )
     model.reset_all()
+    if layers is None:
+        layers = list(range(model.layer_count))
 
     pos_activations = dict([(layer, []) for layer in layers])
     neg_activations = dict([(layer, []) for layer in layers])
@@ -101,7 +111,8 @@ def generate_save_vectors(
             n_activations = model.get_last_activations(layer)
             n_activations = n_activations[0, -1, :].detach().cpu()
             neg_activations[layer].append(n_activations)
-
+    
+    os.makedirs(os.path.join(SAVE_VECTORS_PATH, model.name, dataset_name), exist_ok=True)
     for layer in layers:
         all_pos_layer = t.stack(pos_activations[layer])
         all_neg_layer = t.stack(neg_activations[layer])
@@ -110,7 +121,9 @@ def generate_save_vectors(
             vec,
             os.path.join(
                 SAVE_VECTORS_PATH,
-                f"vec_layer_{make_tensor_save_suffix(layer, model.model_name_path, dataset_name)}.pt",
+                model.name,
+                dataset_name,
+                f"vec_layer_{layer}.pt",
             ),
         )
 
@@ -118,12 +131,16 @@ def generate_save_vectors(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--layers", nargs="+", type=int, default=list(range(32)))
-    parser.add_argument("--use_base_model", action="store_true", default=False)
-    parser.add_argument("--model_size", type=str, choices=["7b", "13b"], default="7b")
     parser.add_argument("--data_path", type=str, default="datasets/test.json")
-    parser.add_argument("--dataset_name", type=str, default="test")
+    parser.add_argument("--use_base_model", action="store_true")
+    # parser.add_argument("--dataset_name", type=str, default="test")
+    parser.add_argument("--model_name", type=str, default="meta-llama/Llama-2-7b-hf", help="Huggingface model name or path")
 
     args = parser.parse_args()
     generate_save_vectors(
-        args.layers, args.use_base_model, args.model_size, args.data_path, args.dataset_name
+        layers=args.layers, 
+        data_path=args.data_path, 
+        # dataset_name=args.dataset_name, 
+        model_name=args.model_name,
+        base_model=args.use_base_model,
     )

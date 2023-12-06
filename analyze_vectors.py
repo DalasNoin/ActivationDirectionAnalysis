@@ -14,23 +14,38 @@ import argparse
 
 # Load vectors
 def load_vectors(directory, dataset_name):
+    # identify all model names and load their vectors for this dataset
     vectors = {}
+    model_names = []
     for filename in os.listdir(directory):
-        if filename.endswith('.pt'):
-            if dataset_name not in filename:
-                continue
-            path = os.path.join(directory, filename)
-            parts = filename[:-3].split('_')
-            layer = int(parts[-3])
-            model_name = parts[-2]
-            if model_name not in vectors:
-                vectors[model_name] = {}
-            v = torch.load(path)
-            vectors[model_name][layer] = v / torch.norm(v)
+        # check if filename is a directory
+        if os.path.isdir(os.path.join(directory, filename)):
+            if os.path.isdir(os.path.join(directory, filename, dataset_name)):
+                model_names.append(filename)
+
+    for model_name in model_names:
+        path = os.path.join(directory, model_name, dataset_name)
+        for filename in os.listdir(path):
+            if filename.endswith('.pt'):
+                layer = int(filename[10:-3])
+                if model_name not in vectors:
+                    vectors[model_name] = {}
+                v = torch.load(os.path.join(path, filename))
+                vectors[model_name][layer] = v / torch.norm(v)
+        # if filename.endswith('.pt'):
+        #     if dataset_name not in filename:
+        #         continue
+        #     path = os.path.join(directory, filename)
+        #     parts = filename[:-3].split('_')
+        #     layer = int(parts[2])
+        #     model_name = parts[3]
+        #     if model_name not in vectors:
+        #         vectors[model_name] = {}
+        #     v = torch.load(path)
+        #     vectors[model_name][layer] = v / torch.norm(v)
     return vectors
 
 def analyze_vectors(dataset_name):
-
     vectors = load_vectors("vectors", dataset_name)
 
     # Initialize PCA
@@ -75,9 +90,10 @@ def analyze_vectors(dataset_name):
     model_names = list(vectors.keys())
 
     def model_label(model_name):
-        if "chat" in model_name:
-            return "Chat"
-        return "Base"
+        return model_name
+        # if "chat" in model_name:
+        #     return "Chat"
+        # return "Base"
 
     # Plot PCA of all layers over all models on a single plot with layer, model labels
     plt.clf()
@@ -91,16 +107,18 @@ def analyze_vectors(dataset_name):
     projections = pca.fit_transform(data)
 
     plt.figure(figsize=(10, 8))
-
+    unique_model_names = set(model_names)
     # Separate chat and base data
-    chat_data = np.array([projections[i] for i, label in enumerate(labels) if label == "Chat"])
-    base_data = np.array([projections[i] for i, label in enumerate(labels) if label == "Base"])
+    data = {key:np.array([projections[i] for i, label in enumerate(labels) if label == key]) for key in unique_model_names}
+    # base_data = np.array([projections[i] for i, label in enumerate(labels) if label == "Base"])
 
     # Plot chat models with crosses
-    plt.scatter(chat_data[:, 0], chat_data[:, 1], c='blue', marker='x', label='Chat')
+    for model_name in unique_model_names:
+        plt.scatter(data[model_name][:, 0], data[model_name][:, 1], marker='x', label=model_name)
+    # plt.scatter(chat_data[:, 0], chat_data[:, 1], c='blue', marker='x', label='Chat')
 
-    # Plot base models with circles
-    plt.scatter(base_data[:, 0], base_data[:, 1], c='red', marker='o', label='Base')
+    # # Plot base models with circles
+    # plt.scatter(base_data[:, 0], base_data[:, 1], c='red', marker='o', label='Base')
 
     # Colorbar and legend
     plt.legend()
@@ -127,6 +145,7 @@ def analyze_vectors(dataset_name):
     plt.plot(common_layers, cosine_sims_per_layer, marker='o', linestyle='-')
     plt.xlabel("Layer Number")
     plt.ylabel("Cosine Similarity")
+    plt.ylim(0, 1)
     plt.title(f"Cosine Similarity per Layer between {model1_name} and {model2_name}, Dataset: {dataset_name}")
     plt.grid(True)
     plt.tight_layout()

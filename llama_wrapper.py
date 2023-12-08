@@ -1,5 +1,6 @@
 import torch as t
 from transformers import AutoTokenizer, AutoModelForCausalLM
+import os
 
 
 class BlockOutputWrapper(t.nn.Module):
@@ -55,6 +56,15 @@ class LlamaWrapper:
         self.layer_count = len(self.model.model.layers)
         for i, layer in enumerate(self.model.model.layers):
             self.model.model.layers[i] = BlockOutputWrapper(layer)
+        
+        # self.save_output_embeddings(f"unembeddings/{self.name}")
+
+    def save_output_embeddings(self, path):
+        # todo: how to save the norm
+        if not os.path.exists(f"unembeddings/{self.name}"):
+            os.makedirs(f"unembeddings", exist_ok=True)
+            lm_head = self.model.lm_head.weight.detach().cpu()
+            t.save(lm_head, path)
 
     def get_logits(self, tokens):
         with t.no_grad():

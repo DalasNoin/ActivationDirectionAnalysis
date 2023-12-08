@@ -17,6 +17,7 @@ import argparse
 from typing import List
 from utils.tokenize_llama import tokenize_llama
 from utils.helpers import make_tensor_save_suffix
+from compare_models.dataset import ComparisonDataset
 
 load_dotenv()
 
@@ -25,42 +26,7 @@ SYSTEM_PROMPT = "You are a helpful, honest and concise assistant."
 SAVE_VECTORS_PATH = "vectors"
 
 
-class ComparisonDataset(Dataset):
-    def __init__(self, data_path, system_prompt, token, model_name_path, use_chat):
-        with open(data_path, "r") as f:
-            self.data = json.load(f)
-        self.system_prompt = system_prompt
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            model_name_path, token=token
-        )
-        self.tokenizer.pad_token = self.tokenizer.eos_token
-        self.use_chat = use_chat
-
-    def prompt_to_tokens(self, instruction, model_output):
-
-        tokens = tokenize_llama(
-            self.tokenizer,
-            self.system_prompt,
-            [(instruction, model_output)],
-            no_final_eos=True,
-            chat_model=self.use_chat,
-        )
-        return t.tensor(tokens).unsqueeze(0)
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, idx):
-        item = self.data[idx]
-        p_text = item["answer_matching_behavior"]
-        n_text = item["answer_not_matching_behavior"]
-        q_text = item["question"]
-        p_tokens = self.prompt_to_tokens(q_text, p_text)
-        n_tokens = self.prompt_to_tokens(q_text, n_text)
-        return p_tokens, n_tokens
-
-
-def generate_save_vectors(
+def generate_vectors(
     data_path: str, 
     # dataset_name: str,
     model_name: str,
@@ -100,19 +66,21 @@ def generate_save_vectors(
         p_tokens = p_tokens.to(model.device)
         n_tokens = n_tokens.to(model.device)
         model.reset_all()
-        model.get_logits(p_tokens)
+        p_logits = model.get_logits(p_tokens).detach().cpu()
+        
         for layer in layers:
             p_activations = model.get_last_activations(layer)
             p_activations = p_activations[0, -1, :].detach().cpu()
             pos_activations[layer].append(p_activations)
         model.reset_all()
-        model.get_logits(n_tokens)
+        n_logits = model.get_logits(n_tokens).detach().cpu()
         for layer in layers:
             n_activations = model.get_last_activations(layer)
             n_activations = n_activations[0, -1, :].detach().cpu()
             neg_activations[layer].append(n_activations)
     
     os.makedirs(os.path.join(SAVE_VECTORS_PATH, model.name, dataset_name), exist_ok=True)
+
     for layer in layers:
         all_pos_layer = t.stack(pos_activations[layer])
         all_neg_layer = t.stack(neg_activations[layer])

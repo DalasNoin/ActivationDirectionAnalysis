@@ -1,7 +1,7 @@
 from typing import List, Tuple, Optional
 
 
-B_INST, E_INST = "[INST]", "[/INST]"
+B_INST, E_INST = "[INST]", "[/INST]Answer:\n"
 B_SYS, E_SYS = "<<SYS>>\n", "\n<</SYS>>\n\n"
 
 
